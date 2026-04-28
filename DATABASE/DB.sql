@@ -1,7 +1,7 @@
 CREATE TABLE movies (
     
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    tittle VARCHAR(255) NOT NULL,
+    tittle VARCHAR(255) NOT NULL UNIQUE,
     year INT NOT NULL,
     director VARCHAR(255),
     create_at TIMESTAMP NOT NULL DEFAULT NOW(),
