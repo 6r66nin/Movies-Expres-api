@@ -8,59 +8,52 @@ import type {
 import type { genre } from "../Types/genreTypes.js";
 import { queryExecutor, queryPagExecutor } from "../Utils/queryExecutor.js";
 
-const getGenres = async (genres: string[]): Promise<genre[]> => {
-  const genresResult = await queryExecutor<genre[]>(
-    "SELECT id FROM genres WHERE name ILIKE ANY($1)",
-    [genres],
-  );
-
-  if (genresResult.length === 0) {
-    throw new AppError("Any movie genre is valid", 400);
-  }
-
-  return genresResult;
-};
-
 const addGenres = async (
-  genresId: number[],
+  genres: string[],
   movieId: string,
-): Promise<void> => {
-  const values = genresId.map((_e, index) => `($1, $${index + 2})`).join(", ");
+): Promise<string[]> => {
+  const values = genres.map((_e, index) => `($1, $${index + 2})`).join(", ");
 
-  await queryExecutor(
-    `INSERT INTO movie_genres (movie_id, genre_id)  VALUES ${values} ON CONFLICT (movie_id, genre_id) DO NOTHING`,
-    [movieId, ...genresId],
-  );
-};
-
-const getMovieWithGenres = async (
-  movie: dataBaseMovie,
-  id: string,
-): Promise<movie> => {
-  const movieGenres = await queryExecutor<genre[]>(
-    "SELECT g.id, g.name FROM genres g INNER JOIN movie_genres mg ON mg.genre_id = g.id WHERE mg.movie_id = $1",
-    [id],
+  const addedGenres = await queryExecutor<genre[]>(
+    `INSERT INTO movie_genres (movie_id, genre_id)  VALUES ${values} ON CONFLICT (movie_id, genre_id) DO NOTHING RETURNING *`,
+    [movieId, ...genres],
   );
 
-  return {
-    ...movie,
-    genres: movieGenres.map((g) => g.name),
-  };
+  return addedGenres.map((e) => e.name);
 };
 
+// Services Routes 
+///////////////////////////////////////////////////////
 
-const getMovieWithGenresById = async (id: string): Promise<movie> => {
-  const movie = await getDatabaseMovie(id);
+export const getMovies = async (page: number = 1): Promise<movie[]> => {
+  const query =
+    "SELECT m.*, array_agg(g.name) FILTER(WHERE g.name IS NOT NULL) as genres FROM movies m LEFT JOIN movie_genres mg ON m.id=mg.movie_id LEFT JOIN genres g ON g.id=mg.genre_id GROUP BY m.id LIMIT $1 OFFSET $2";
 
-  return getMovieWithGenres(movie, id);
+  return queryPagExecutor<movie[]>(page, 10, query);
 };
 
-const getDatabaseMovie = async (id: string): Promise<dataBaseMovie> => {
-  const movie = await queryExecutor<dataBaseMovie>(
-    "SELECT * FROM movies WHERE id = $1",
-    [id],
-    true,
+export const FilterMovies = async (
+  filter: string[],
+  page: number = 1,
+): Promise<movie[]> => {
+  const query =
+    "SELECT m.*, array_agg(g.name) as genres FROM movies m JOIN movie_genres mg ON mg.movie_id = m.id JOIN genres g ON g.id = mg.genre_id WHERE m.id IN (SELECT mg2.movie_id FROM movie_genres mg2 JOIN genres g2 ON g2.id = mg2.genre_id WHERE LOWER(g2.name) = ANY($1) GROUP BY mg2.movie_id HAVING COUNT(DISTINCT LOWER(g2.name)) = array_length($1, 1)) GROUP BY m.id LIMIT $2 OFFSET $3";
+
+  const filteredDatabaseMovies = await queryPagExecutor<movie[]>(
+    page,
+    10,
+    query,
+    [filter],
   );
+
+  return filteredDatabaseMovies;
+};
+
+export const getMovie = async (id: string): Promise<movie> => {
+  const query =
+    "SELECT m.*, array_agg(g.name) FILTER(WHERE g.name IS NOT null) as genres FROM movies m JOIN movie_genres mg ON mg.movie_id = m.id JOIN genres g ON g.id = mg.genre_id WHERE m.id = $1 GROUP BY m.id;";
+
+  const movie = queryExecutor<movie>(query, [id], true);
 
   if (!movie) {
     throw new AppError("Movie not found", 404);
@@ -69,62 +62,22 @@ const getDatabaseMovie = async (id: string): Promise<dataBaseMovie> => {
   return movie;
 };
 
-// Routes Services
-///////////////////////////////////////////////////////
-
-export const getMovies = async (page: number = 1): Promise<dataBaseMovie[]> => {
-  
-  const query = "SELECT * FROM movies LIMIT $1 OFFSET $2";
-
-  const result = queryPagExecutor<dataBaseMovie[]>(page, 10, query);
-
-  return result;
-};
-
-export const FilterMovies = async (
-  filter: string[],
-  page: number = 1,
-): Promise<movie[]> => {
-
-  const genresId = (await getGenres(filter)).map((g) => g.id);
-
-  const query = "SELECT DISTINCT m.* FROM movies m JOIN movie_genres mg ON mg.movie_id = m.id WHERE mg.genre_id = ANY($1) LIMIT $2 OFFSET $3";
-
-  const filteredDatabaseMovies = await queryPagExecutor<dataBaseMovie[]>(page, 10, query, [genresId]);
-
-  const movies: movie[] = [];
-
-  for (const e of filteredDatabaseMovies) {
-    
-    movies.push(await getMovieWithGenres(e,e.id));
-    
-  }
-
-  return movies;
-};
-
-export const getMovie = async (id: string): Promise<movie> => {
-  return await getMovieWithGenresById(id);
-};
-
 export const addMovie = async (newMovie: createMovie): Promise<movie> => {
-  const { tittle, year, director, rating, sinopsis, genres } = newMovie;
+  const { title, year, director, rating, sinopsis, genres } = newMovie;
 
   await queryExecutor("BEGIN");
 
-  const genresId = (await getGenres(genres)).map((g) => g.id);
-
   const movie = await queryExecutor<dataBaseMovie>(
-    "INSERT INTO movies (tittle, year, director, rating, sinopsis) VALUES ($1,$2,$3,$4,$5) RETURNING *",
-    [tittle, year, director, rating, sinopsis],
+    "INSERT INTO movies (tittle, year, director, rating, sinopsis) VALUES ($,$,$,$,$) RETURNING *",
+    [title, year, director, rating, sinopsis],
     true,
   );
 
-  addGenres(genresId, movie.id);
+  const addedGenres = await addGenres(genres, movie.id);
 
   await queryExecutor("COMMIT");
 
-  return await getMovieWithGenres(movie, movie.id);
+  return { genres: addedGenres, ...movie };
 };
 
 export const updateMovie = async (
@@ -150,20 +103,22 @@ export const updateMovie = async (
     true,
   );
 
-  if (genres) {
-    const genresId = (await getGenres(partialMovie.genres!)).map((g) => g.id);
-    await addGenres(genresId, id);
-  }
+  const addedGenres = genres ? await addGenres(genres, id) : [];
 
   await queryExecutor("COMMIT");
 
-  return await getMovieWithGenres(movie, id);
+  const updateMovie = {
+    genres: addedGenres,
+    ...movie,
+  };
+
+  return updateMovie;
 };
 
-export const deleteMovie = async (id: string): Promise<movie> => {
-  const deleteMovie = await getMovieWithGenresById(id);
-
-  await queryExecutor("DELETE FROM movies WHERE id = $1", [id], true);
-
-  return deleteMovie;
+export const deleteMovie = async (id: string): Promise<dataBaseMovie> => {
+  return await queryExecutor<dataBaseMovie>(
+    "DELETE FROM movies WHERE id = $1 RETURNING *",
+    [id],
+    true,
+  );
 };

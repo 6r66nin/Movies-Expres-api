@@ -1,6 +1,7 @@
 import { AppError } from "../Classes/AppError.js";
 
 export const errorParser = (error: any): AppError => {
+  
   if (!error.code) {
     return new AppError("Internal Error", 500);
   }

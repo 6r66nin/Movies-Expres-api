@@ -1,4 +1,5 @@
 import pool from "../Config/pool.js";
+import { errorParser } from "./databaseErrorParser.js";
 export const queryExecutor = async (query, params = [], oneItem = false) => {
     try {
         const result = await pool.query(query, params);
@@ -7,19 +8,17 @@ export const queryExecutor = async (query, params = [], oneItem = false) => {
     }
     catch (error) {
         await pool.query("ROLLBACK");
-        throw error;
+        throw errorParser(error);
     }
 };
 export const queryPagExecutor = async (pag, limit, query, params = []) => {
     try {
         const offset = (pag - 1) * limit;
         params.push(limit, offset);
-        console.log(params);
         const result = await pool.query(query, params);
         return result.rows;
     }
     catch (error) {
-        await pool.query("ROLLBACK");
-        throw error;
+        throw errorParser(error);
     }
 };

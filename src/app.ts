@@ -4,7 +4,7 @@ import { errorHandler } from "./Middlewares/errorHandler.js";
 import { urlNotFound } from "./Controller/notFoundController.js";
 
 const app = Express();
-const PORT = process.env.PORT;
+const PORT = process.env.PORT || 3000;
 
 app.use(Express.json());
 
@@ -14,5 +14,5 @@ app.use(urlNotFound);
 app.use(errorHandler);
 
 app.listen(PORT, () => {
-  console.log("Server Working");
+  console.log("Server Working on", PORT);
 });

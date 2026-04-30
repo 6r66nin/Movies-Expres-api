@@ -1,5 +1,9 @@
-import { createMovieSchema, partialCreateMovieSchema } from "../Schemas/movieSchema.js";
+import { createMovieSchema, partialCreateMovieSchema, } from "../Schemas/movieSchema.js";
+import { AppError } from "../Classes/AppError.js";
 export const validateMovie = async (req, _res, next) => {
+    if (!req.body) {
+        throw new AppError("Invalid movie", 400);
+    }
     req.body = createMovieSchema.parse(req.body);
     next();
 };

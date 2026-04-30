@@ -6,8 +6,7 @@ export const validateId = async (
   res: Response,
   next: NextFunction,
 ): Promise<void> => {
-  
-  const {id} = req.params;
+  const { id } = req.params;
 
   idSchema.parse(id);
 

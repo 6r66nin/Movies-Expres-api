@@ -19,4 +19,4 @@ router
   .route("/:id")
   .get(Controller.getMovie)
   .patch(validatePartialMovie, Controller.updateMovie)
-  .delete(Controller.addMovie);
+  .delete(Controller.deleteMovie);
